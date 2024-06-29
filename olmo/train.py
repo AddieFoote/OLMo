@@ -517,6 +517,7 @@ class Trainer:
         load_trainer_state: bool = True,
         sharded_checkpointer: Optional[ShardedCheckpointerType] = None,
     ):
+        print("restore_sharded_checkpoint", local_cache)
         # Zero-gradients to avoid gathering them.
         self.optim.zero_grad(set_to_none=True)
         checkpointer = build_sharded_checkpointer(self.cfg, name=sharded_checkpointer)
@@ -555,6 +556,7 @@ class Trainer:
         load_optimizer_state: bool = True,
         load_trainer_state: bool = True,
     ):
+        print("restore_unsharded_checkpoint", local_cache)
         # Zero-gradients to avoid gathering them.
         self.optim.zero_grad(set_to_none=True)
         checkpointer = FullCheckpointer(self.cfg)
@@ -595,6 +597,7 @@ class Trainer:
         load_trainer_state: bool = True,
         sharded_checkpointer: Optional[ShardedCheckpointerType] = None,
     ):
+        print("restore_checkpoint", local_cache)
         if checkpoint_type == CheckpointType.unsharded or (
             checkpoint_type is None and str(load_path).rstrip("/").endswith("-unsharded")
         ):
@@ -652,6 +655,10 @@ class Trainer:
             attention_mask=batch.get("attention_mask"),
             attention_bias=batch.get("attention_bias"),
         ).logits
+
+        torch.save(logits, 'output_train_logits_forward.pt')
+        torch.save(batch, 'train_micro_batch_forward.pt')
+
         logits_for_loss = logits[..., :-1, :].contiguous()
         # shape: (batch_size * seq_len, vocab_size)
         logits_for_loss = logits_for_loss.view(-1, logits_for_loss.size(-1))
@@ -672,9 +679,23 @@ class Trainer:
     def train_micro_batch(
         self, micro_batch: Dict[str, Any], batch_size_in_tokens: int
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        # TODO: TODO TODO HERE IS WHERE WE SHOULD INTERFERE AND CHANGE ONE ITEM IN THE BATCH AND GET THE LOGITS
+        print(micro_batch)
+        print("cuda:0", torch.cuda.memory_allocated('cuda:0') / 1024**3)
+        print("cuda:1", torch.cuda.memory_allocated('cuda:1') / 1024**3)
+        print("cuda:2", torch.cuda.memory_allocated('cuda:2') / 1024**3)
+
         ce_loss, z_loss, logits = self.model_forward(
             micro_batch, compute_z_loss=self.cfg.softmax_auxiliary_loss, loss_reduction="sum"
         )
+        print(logits)
+        print("cuda:0", torch.cuda.memory_allocated('cuda:0') / 1024**3)
+        print("cuda:1", torch.cuda.memory_allocated('cuda:1') / 1024**3)
+        print("cuda:2", torch.cuda.memory_allocated('cuda:2') / 1024**3)
+        torch.save(logits, 'output_train_logits.pt')
+        torch.save(micro_batch, 'train_micro_batch.pt')
+
+        exit()
         ce_loss = ce_loss / batch_size_in_tokens
 
         # In case this helps with memory utilization.
